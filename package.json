@@ -1,0 +1,21 @@
+{
+  "name": "poker_cli_server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "poker_cli_server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node poker_cli_server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@clack/prompts": "^0.10.0",
+    "chalk": "^5.4.1",
+    "dotenv": "^16.4.7",
+    "net": "^1.0.2",
+    "strip-ansi": "^7.1.0"
+  }
+}
