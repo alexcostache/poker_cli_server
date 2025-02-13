@@ -1,39 +1,41 @@
 # syntax = docker/dockerfile:1
 
-# Adjust NODE_VERSION as desired
+# Set the Node.js version (adjust if needed)
 ARG NODE_VERSION=20.18.0
+
+# Base image for the final runtime
 FROM node:${NODE_VERSION}-slim AS base
 
 LABEL fly_launch_runtime="Node.js"
 
-# Node.js app lives here
 WORKDIR /app
 
-# Set production environment
+# Set production environment and port
 ENV NODE_ENV="production"
+ENV PORT=3000
 
-
-# Throw-away build stage to reduce size of final image
+# Build stage to compile dependencies (if you have native addons, etc.)
 FROM base AS build
 
-# Install packages needed to build node modules
+# Install build dependencies
 RUN apt-get update -qq && \
-    apt-get install --no-install-recommends -y build-essential node-gyp pkg-config python-is-python3
+    apt-get install --no-install-recommends -y build-essential node-gyp pkg-config python-is-python3 && \
+    rm -rf /var/lib/apt/lists/*
 
-# Install node modules
-COPY package-lock.json package.json ./
+# Copy package files and install node modules
+COPY package*.json ./
 RUN npm ci
 
-# Copy application code
+# Copy the rest of the application code
 COPY . .
 
-
-# Final stage for app image
+# Final image: copy built application from the build stage
 FROM base
 
-# Copy built application
 COPY --from=build /app /app
 
-# Start the server by default, this can be overwritten at runtime
+# Expose the port that your app listens on.
 EXPOSE 3000
-CMD [ "npm", "run", "start" ]
+
+# Run your application using the start script in package.json.
+CMD ["npm", "run", "start"]
