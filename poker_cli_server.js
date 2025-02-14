@@ -503,7 +503,7 @@ async function runGame(socket) {
 // ---------------------------------------------------------
 // Start TCP Server
 // ---------------------------------------------------------
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 const server = net.createServer(socket => {
   socket.setEncoding('utf8');
   socket.on('error', (err) => {
