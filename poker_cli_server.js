@@ -361,6 +361,9 @@ function evaluateHand(hand) {
 // ---------------------------------------------------------
 
 async function runGame(socket) {
+  console.log("Client connected, starting game.");
+  socket.write("Welcome to Poker CLI!\n"); // Immediate output test
+
   const rl = createInterface(socket);
 
   // Handle errors on the readline interface.
@@ -503,15 +506,26 @@ async function runGame(socket) {
 // ---------------------------------------------------------
 // Start TCP Server
 // ---------------------------------------------------------
-const PORT = process.env.PORT || 8080;
-const server = net.createServer(socket => {
-  socket.setEncoding('utf8');
-  socket.on('error', (err) => {
-    console.error("Socket error:", err);
+function startTcpServer(port) {
+  const server = net.createServer((socket) => {
+    socket.setEncoding('utf8');
+    
+    socket.on('error', (err) => {
+      console.error("Socket error:", err);
+    });
+    
+    // Call your game logic function to handle this socket connection
+    runGame(socket);
   });
-  runGame(socket);
-});
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server listening on port ${PORT}`);
-});
+  server.on('error', (err) => {
+    console.error("Server error:", err);
+  });
+
+  server.listen(port, '0.0.0.0', () => {
+    console.log(`TCP Server listening on port ${port}`);
+  });
+}
+
+const PORT = process.env.PORT || 3000;
+startTcpServer(PORT);
