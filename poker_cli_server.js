@@ -512,6 +512,6 @@ const server = net.createServer(socket => {
   runGame(socket);
 });
 
-server.listen(PORT, () => {
-  console.log(`Poker CLI Server is listening on port ${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server listening on port ${PORT}`);
 });
