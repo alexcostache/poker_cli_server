@@ -12,7 +12,7 @@ WORKDIR /app
 
 # Set production environment and port
 ENV NODE_ENV="production"
-ENV PORT=3000
+ENV PORT=8080
 
 # Build stage to compile dependencies (if you have native addons, etc.)
 FROM base AS build
@@ -35,7 +35,7 @@ FROM base
 COPY --from=build /app /app
 
 # Expose the port that your app listens on.
-EXPOSE 3000
+EXPOSE 8080
 
 # Run your application using the start script in package.json.
 CMD ["npm", "run", "start"]
