@@ -3,7 +3,7 @@
 # See https://fly.io/docs/reference/configuration/ for more details.
 #
 
-app = "alexa-icy-bush-8494"
+app = "poker-cli"
 primary_region = "lhr"
 
 [[services]]
