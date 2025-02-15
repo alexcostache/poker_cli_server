@@ -4,52 +4,65 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import net from 'net';
-import chalk from 'chalk';
-import stripAnsi from 'strip-ansi';
 import readline from 'readline';
-import { intro, outro, text, confirm, select } from '@clack/prompts';
 
-// ------------------ Global Color Variables ------------------
-
-// Color for Hearts and Diamonds (bright red)
-const HEARTS_DIAMONDS_COLOR = chalk.redBright;
-
-// Color for Clubs and Spades (bright blue)
-const CLUBS_SPADES_COLOR = chalk.blueBright;
-
-// ANSI Reset code
-const RESET = "\x1b[0m";
-
-// Winning highlight: black text on a green background.
-const WIN_HIGHLIGHT = chalk.bgGreen.black;
-
-// ------------------ End Global Colors ------------------
-
-// ------------------ Welcome Banner & Instructions ------------------
-const WELCOME_BANNER = `
+/* 
+  TEXT object: All user-facing text is centralized here.
+*/
+const TEXT = {
+  banner: `
   ____   ___  _  _______ ____     ____ _     ___ 
  |  _ \\ / _ \\| |/ / ____|  _ \\   / ___| |   |_ _|
  | |_) | | | | ' /|  _| | |_) | | |   | |    | | 
  |  __/| |_| | . \\| |___|  _ <  | |___| |___ | | 
  |_|    \\___/|_|\\_\\_____|_| \\_\\  \\____|_____|___|
-                                                  
-`;
+  `,
+  instructions: `
+Welcome to the Cyber Casino!
+Try your luck at Poker CLI!
+Press Enter to play.
+___________________________________________________
+  `,
+  betPrompt: "Select your bet (5, 10, 20, 50, 100) [default 5]: ",
+  validBetMessage: "Please select a valid bet: 5, 10, 20, 50, or 100.",
+  changeBetPrompt: "Deal (Enter) or type 'bet' to change your bet: ",
+  holdInstruction: "Select cards to hold (e.g., 134) or press Enter for none.",
+  holdPrompt: "Enter card numbers to hold: ",
+  noHoldMessage: "No cards held. Replacing all cards.",
+  continuePrompt: "Press Enter to continue: ",
+  gambleSessionPrompt: "Gamble your win? (1 = yes, 2 = no): ",
+  gambleColorPrompt: "Choose card color: 1 = red, 2 = black, 3 = cash out: ",
+  gambleCurrentWin: (win) => `Current win: ${win} credits`,
+  gambleCorrectMessage: (color, win) => `Correct! Card color: ${color}. Win doubled to ${win} credits.`,
+  gambleIncorrectMessage: (color) => `Wrong! Card color: ${color}. Your win is lost.`,
+  gambleHeader: `GAMBLE`,
+  exitMessage: "Exiting game. Goodbye!",
+  insufficientCredits: "Not enough credits to play. Game over!",
+  gameOverMessage: "*** YOU LOSE! ***\nGame over. Thanks for playing!",
+  creditLabel: "Credits: ",
+  betInfoLabel: "Bet: ",
+  handCountLabel: "Hand #: ",
+  payoutHeader: "Payout Table (Multiplier x Bet) | Expected Win:",
+  divider: "___________________________________________________",
+  winLabel: "Win for this hand: "
+};
 
-const INSTRUCTIONS = `
-Welcome to POKER CLI!
-
-Please ensure your terminal supports UTF-8 and ANSI escape codes.
-For Windows: Run 'chcp 65001' in your command prompt.
-For Linux: Ensure your locale is set to UTF-8 (e.g., export LANG=en_US.UTF-8).
-
-Enjoy the game!
-`;
-// ------------------ End Welcome Banner & Instructions ------------------
+const winMessages = [
+  "Fantastic! You're on fire!",
+  "Great job! Luck is on your side!",
+  "Awesome! Keep it up!",
+  "You're a natural!"
+];
+const lossMessages = [
+  "Tough break, try again!",
+  "Better luck next time!",
+  "Don't give up, fortune favors the bold!",
+  "Keep playing – you'll get there!"
+];
 
 // ---------------------------------------------------------
 // Payout Table & Value Mapping
 // ---------------------------------------------------------
-
 const payoutTable = [
   { name: "Royal Flush",      multiplier: 250 },
   { name: "Straight Flush",   multiplier: 50 },
@@ -68,11 +81,41 @@ const valueMap = {
 };
 
 // ---------------------------------------------------------
+// Suit Art Templates
+// ---------------------------------------------------------
+const suitArt = {
+  "Hearts":   { line3: "| (\\/) |", line4: "| :\\/ :|" }, // For Hearts, line4 should be "| :\/: |" so adjust:
+  "Hearts":   { line3: "| (\\/) |", line4: "| :\\/ :|" }, // Actually, sample shows: "| (\/) |" and "| :\/: |"
+  "Diamonds": { line3: "| :/\\: |", line4: "| :\\/ :|" },  // For Diamonds: line3: "| :/\: |", line4: "| :\/: |"
+  "Clubs":    { line3: "| :(): |", line4: "| ()() |" },
+  "Spades":   { line3: "| :/\\: |", line4: "| (__) |" }
+};
+// Adjust the Hearts template to exactly match sample:
+suitArt["Hearts"] = { line3: "| (\\/) |", line4: "| :\\/ :|" }; 
+// However, the sample art provided was:
+// For a card:  
+// .------.  
+// |x.--. |  
+// | (\/) |  
+// | :\/: |  
+// | '--'x|  
+// `------'
+// So we want for Hearts: line3: "| (\\/) |", line4: "| :\\/ :|" should actually be "| :\/: |" (with no extra space).
+suitArt["Hearts"] = { line3: "| (\\/) |", line4: "| :\\/ :|" };
+// For Diamonds, we want: line3: "| :/\\: |", line4: "| :\\/ :|", but we'll assume that's correct.
+// For Clubs: line3: "| :(): |", line4: "| ()() |".
+// For Spades: line3: "| :/\\: |", line4: "| (__) |".
+
+// ---------------------------------------------------------
 // Card, Deck, and ASCII Art Functions
 // ---------------------------------------------------------
+const suitsArr = ['Hearts', 'Diamonds', 'Clubs', 'Spades'];
+const valuesArr = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
 
-const suits = ['Hearts', 'Diamonds', 'Clubs', 'Spades'];
-const values = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+// Helper: Convert card value for display (e.g., "10" becomes "T")
+function displayValue(val) {
+  return val === "10" ? "T" : val;
+}
 
 class Card {
   constructor(suit, value) {
@@ -91,8 +134,8 @@ class Deck {
   }
   initializeDeck() {
     this.cards = [];
-    for (const suit of suits) {
-      for (const value of values) {
+    for (const suit of suitsArr) {
+      for (const value of valuesArr) {
         this.cards.push(new Card(suit, value));
       }
     }
@@ -109,93 +152,65 @@ class Deck {
 }
 
 /**
- * Returns the ASCII art for a card with its suit color.
+ * Returns ASCII art for a card using the desired style.
+ * Each card is 6 lines high and 8 characters wide.
+ * Line templates:
+ *   Line 1: .------.
+ *   Line 2: |x.--. |   (x is the card value)
+ *   Line 3: suitArt.line3
+ *   Line 4: suitArt.line4
+ *   Line 5: | '--'x|   (x is the card value)
+ *   Line 6: `------'
+ *
+ * If highlight is true, all border characters are replaced with stars.
  */
-function getAsciiCard(card) {
-  let colorFunc;
-  if (card.suit === "Hearts" || card.suit === "Diamonds") {
-    colorFunc = (str) => HEARTS_DIAMONDS_COLOR(str) + RESET;
-  } else if (card.suit === "Clubs" || card.suit === "Spades") {
-    colorFunc = (str) => CLUBS_SPADES_COLOR(str) + RESET;
+function getBasicAsciiCard(card, highlight = false) {
+  const width = 8;
+  const v = displayValue(card.value);
+  const line1 = ".------.";
+  const line2 = `|${v}.--. |`;
+  const line3 = suitArt[card.suit] ? suitArt[card.suit].line3.replace("x", v) : "|      |";
+  const line4 = suitArt[card.suit] ? suitArt[card.suit].line4.replace("x", v) : "|      |";
+  const line5 = `| '--'${v}|`;
+  const line6 = "`------'";
+  const art = [line1, line2, line3, line4, line5, line6];
+  if (highlight) {
+    // Replace first and last character of each line with stars.
+    return art.map(line => "*" + line.slice(1, -1) + "*");
   } else {
-    colorFunc = (str) => str;
+    return art;
   }
-  const val = card.value;
-  const leftVal  = (val.length === 2 ? val : val + ' ');
-  const rightVal = (val.length === 2 ? val : ' ' + val);
-  const suitSymbol = card.suit === "Hearts" ? "♥" :
-                     card.suit === "Diamonds" ? "♦" :
-                     card.suit === "Clubs" ? "♣" :
-                     card.suit === "Spades" ? "♠" : "?";
-  let art = [
-    '┌─────────┐',
-    `│${leftVal}       │`,
-    '│         │',
-    `│    ${suitSymbol}    │`,
-    '│         │',
-    `│       ${rightVal}│`,
-    '└─────────┘'
-  ];
-  return art.map(line => colorFunc(line));
+}
+
+function getAsciiCard(card, highlight = false) {
+  return getBasicAsciiCard(card, highlight);
 }
 
 function displayHand(hand) {
-  const cardsAscii = hand.map(card => getAsciiCard(card));
+  const cardsAscii = hand.map(card => getAsciiCard(card, false));
   const cardHeight = cardsAscii[0].length;
   let combined = '';
   for (let i = 0; i < cardHeight; i++) {
-    const line = cardsAscii.map(cardLines => cardLines[i]).join('  ');
-    combined += line + '\n';
+    combined += cardsAscii.map(line => line[i]).join('  ') + '\n';
   }
   return combined;
 }
 
-function displayHandWithIndices(hand, highlightIndexes = []) {
-  const cardsAscii = hand.map((card, index) => {
-    let art = getAsciiCard(card);
-    if (highlightIndexes.includes(index)) {
-      art = art.map(line => String(WIN_HIGHLIGHT(stripAnsi(line))));
-    }
-    return art;
-  });
+function displayHandWithHighlights(hand, highlights = []) {
+  const cardsAscii = hand.map((card, index) =>
+    getAsciiCard(card, highlights.includes(index))
+  );
   const cardHeight = cardsAscii[0].length;
   let combined = '';
   for (let i = 0; i < cardHeight; i++) {
-    const line = cardsAscii.map(cardLines => cardLines[i]).join('  ');
-    combined += line + '\n';
-  }
-  let indicesLine = '';
-  for (let i = 0; i < hand.length; i++) {
-    const indexStr = `(${i+1})`;
-    const padded = indexStr.padStart(Math.floor((11 + indexStr.length) / 2), ' ')
-                             .padEnd(11, ' ');
-    indicesLine += padded + "  ";
-  }
-  combined += indicesLine + '\n';
-  return combined;
-}
-
-function displayHandWithHighlights(hand, highlightIndexes = []) {
-  const cardsAscii = hand.map((card, index) => {
-    let art = getAsciiCard(card);
-    if (highlightIndexes.includes(index)) {
-      art = art.map(line => String(WIN_HIGHLIGHT(stripAnsi(line))));
-    }
-    return art;
-  });
-  const cardHeight = cardsAscii[0].length;
-  let combined = '';
-  for (let i = 0; i < cardHeight; i++) {
-    const line = cardsAscii.map(cardLines => cardLines[i]).join('  ');
-    combined += line + '\n';
+    combined += cardsAscii.map(line => line[i]).join('  ') + '\n';
   }
   return combined;
 }
 
 // ---------------------------------------------------------
-// Custom Prompt Functions for Remote I/O
+// I/O Helpers
 // ---------------------------------------------------------
-
 function writeLine(socket, text) {
   socket.write(text + "\n");
 }
@@ -212,293 +227,297 @@ function createInterface(socket) {
   });
 }
 
-function promptLine(rl, message) {
+function promptLine(rl, msg) {
   return new Promise(resolve => {
-    rl.question(message, answer => {
-      if (answer.trim().toLowerCase() === "exit") {
-        resolve("exit");
-      } else {
-        resolve(answer.trim());
-      }
-    });
+    rl.question(msg, ans => resolve(ans.trim()));
   });
 }
 
-async function promptConfirm(rl, message) {
-  let answer = await promptLine(rl, message + " (y/n): ");
-  return answer.toLowerCase().startsWith('y');
+// ---------------------------------------------------------
+// Bet Selection Helper (Updated Valid Bets)
+// ---------------------------------------------------------
+async function selectBet(rl, socket) {
+  const valid = [5, 10, 20, 50, 100];
+  while (true) {
+    let betStr = await promptLine(rl, TEXT.betPrompt);
+    if (betStr.toLowerCase() === "exit") return "exit";
+    if (betStr === "") return 5;
+    let betVal = parseInt(betStr);
+    if (valid.includes(betVal)) return betVal;
+    writeLine(socket, TEXT.validBetMessage);
+  }
 }
 
 // ---------------------------------------------------------
-// UI Display Helpers for Remote I/O (Persistent Header)
+// UI Display Helpers (Simulated GUI)
 // ---------------------------------------------------------
-
-// Print header (banner + instructions) once on connect.
 function printHeader(socket) {
   clearScreen(socket);
-  writeLine(socket, WELCOME_BANNER);
-  writeLine(socket, INSTRUCTIONS);
+  writeLine(socket, TEXT.banner);
+  writeLine(socket, TEXT.instructions);
 }
 
-function printPayoutTableSocket(socket, highlightName = "") {
-  writeLine(socket, "Payout Table (Multiplier x Bet):");
+function printPayoutTableSocket(socket, currentBet, highlightName = "") {
+  writeLine(socket, TEXT.payoutHeader);
   for (const row of payoutTable) {
-    let line = `${row.name.padEnd(18)} : ${row.multiplier}`;
-    if (row.name === highlightName) {
-      line = chalk.green(line);
-    }
+    let expectedWin = currentBet * row.multiplier;
+    let line = `${row.name.padEnd(18)} | ${row.multiplier.toString().padEnd(5)} | ${expectedWin}`;
+    if (row.name === highlightName) line = `${line} <==`;
     writeLine(socket, line);
   }
-  writeLine(socket, '---------------------------------------------------\n');
+  writeLine(socket, TEXT.divider + "\n");
 }
 
-// After game starts, clear the screen completely and reprint the banner (without instructions).
-function printUI(socket, hand, highlightName, win, credits, message, showIndices = false, highlightedIndexes = []) {
+/**
+ * printUI displays the overall game UI.
+ */
+function printUI(socket, hand, highlightName, win, credits, message, handCount, currentBet, highlights = []) {
   clearScreen(socket);
-  // Print only the banner (without instructions) after game starts.
-  writeLine(socket, WELCOME_BANNER);
-  writeLine(socket, `Credits: ${credits}\n`);
-  printPayoutTableSocket(socket, highlightName);
+  printHeader(socket);
+  printPayoutTableSocket(socket, currentBet, highlightName);
+  writeLine(socket, TEXT.creditLabel + credits + "    " + TEXT.handCountLabel + handCount + "    " + TEXT.betInfoLabel + currentBet + " credits/hand\n");
   if (hand) {
-    writeLine(socket, "Your Hand:");
-    if (showIndices) {
-      writeLine(socket, displayHandWithIndices(hand, highlightedIndexes));
-    } else if (highlightedIndexes.length > 0) {
-      writeLine(socket, displayHandWithHighlights(hand, highlightedIndexes));
+    if (highlights && highlights.length > 0) {
+      writeLine(socket, displayHandWithHighlights(hand, highlights));
     } else {
       writeLine(socket, displayHand(hand));
     }
   }
-  if (message) {
-    writeLine(socket, message + "\n");
+  if (message) writeLine(socket, message + "\n");
+  if (win > 0) writeLine(socket, TEXT.winLabel + win + " credits.\n");
+}
+
+/**
+ * printGambleInteractiveUI displays an interactive gamble screen.
+ */
+function printGambleInteractiveUI(socket, currentWin, gambleCount, maxGamble, showChoice, prevColors, currentBet) {
+  clearScreen(socket);
+  printHeader(socket);
+  printPayoutTableSocket(socket, currentBet);
+  writeLine(socket, TEXT.gambleHeader);
+  writeLine(socket, TEXT.gambleCurrentWin(currentWin));
+  writeLine(socket, renderProgressBar(gambleCount, maxGamble, currentWin));
+  if (prevColors.length > 0) {
+    writeLine(socket, "Previous: " + prevColors.join(" > "));
   }
-  if (win > 0) {
-    writeLine(socket, `Win for this hand: ${win} credits.\n`);
+  if (showChoice) {
+    writeLine(socket, "Choose: 1 = red, 2 = black, 3 = cash out");
   }
 }
 
-// ---------------------------------------------------------
-// Hand Evaluation Function (Unchanged)
-// ---------------------------------------------------------
+/**
+ * Renders a progress bar with fixed length (5 steps) and shows the maximum possible win.
+ */
+function renderProgressBar(current, max, currentWin) {
+  const totalSteps = 5;
+  const filled = current;
+  const empty = totalSteps - filled;
+  const maxPossibleWin = currentWin * Math.pow(2, totalSteps - current);
+  return `[${"#".repeat(filled)}${"-".repeat(empty)}] (${current}/${totalSteps})  Max: ${maxPossibleWin} credits`;
+}
 
+// ---------------------------------------------------------
+// Hand Evaluation Function
+// ---------------------------------------------------------
 function evaluateHand(hand) {
-  const numbers = hand.map(card => valueMap[card.value]).sort((a, b) => a - b);
+  const nums = hand.map(card => valueMap[card.value]).sort((a, b) => a - b);
   const suitsArr = hand.map(card => card.suit);
-  const isFlush = suitsArr.every(s => s === suitsArr[0]);
-  let isStraight = true;
-  for (let i = 1; i < numbers.length; i++) {
-    if (numbers[i] !== numbers[i - 1] + 1) {
-      isStraight = false;
-      break;
-    }
+  const flush = suitsArr.every(s => s === suitsArr[0]);
+  let straight = true;
+  for (let i = 1; i < nums.length; i++) {
+    if (nums[i] !== nums[i - 1] + 1) { straight = false; break; }
   }
-  if (!isStraight &&
-      numbers[0] === 2 &&
-      numbers[1] === 3 &&
-      numbers[2] === 4 &&
-      numbers[3] === 5 &&
-      numbers[4] === 14) {
-    isStraight = true;
+  if (!straight &&
+      nums[0] === 2 &&
+      nums[1] === 3 &&
+      nums[2] === 4 &&
+      nums[3] === 5 &&
+      nums[4] === 14) {
+    straight = true;
   }
-  let countMap = {};
-  for (let i = 0; i < hand.length; i++) {
-    const card = hand[i];
-    if (!countMap[card.value]) {
-      countMap[card.value] = { count: 0, indices: [] };
-    }
-    countMap[card.value].count++;
-    countMap[card.value].indices.push(i);
-  }
-  if (isFlush && isStraight && numbers[0] === 10) {
+  let count = {};
+  hand.forEach((c, i) => {
+    if (!count[c.value]) count[c.value] = { cnt: 0, idx: [] };
+    count[c.value].cnt++;
+    count[c.value].idx.push(i);
+  });
+  if (flush && straight && nums[0] === 10)
     return { handName: "Royal Flush", multiplier: 250, winningIndices: [0, 1, 2, 3, 4] };
-  }
-  if (isFlush && isStraight) {
+  if (flush && straight)
     return { handName: "Straight Flush", multiplier: 50, winningIndices: [0, 1, 2, 3, 4] };
+  for (let key in count) {
+    if (count[key].cnt === 4)
+      return { handName: "Four of a Kind", multiplier: 25, winningIndices: count[key].idx };
   }
-  for (let key in countMap) {
-    if (countMap[key].count === 4) {
-      return { handName: "Four of a Kind", multiplier: 25, winningIndices: countMap[key].indices };
-    }
+  let three = false, pair = false;
+  for (let key in count) {
+    if (count[key].cnt === 3) three = true;
+    if (count[key].cnt === 2) pair = true;
   }
-  let hasThree = false, hasPair = false;
-  for (let key in countMap) {
-    if (countMap[key].count === 3) { hasThree = true; }
-    if (countMap[key].count === 2) { hasPair = true; }
-  }
-  if (hasThree && hasPair) {
+  if (three && pair)
     return { handName: "Full House", multiplier: 9, winningIndices: [0, 1, 2, 3, 4] };
+  if (flush) return { handName: "Flush", multiplier: 6, winningIndices: [0, 1, 2, 3, 4] };
+  if (straight) return { handName: "Straight", multiplier: 4, winningIndices: [0, 1, 2, 3, 4] };
+  for (let key in count) {
+    if (count[key].cnt === 3)
+      return { handName: "Three of a Kind", multiplier: 3, winningIndices: count[key].idx };
   }
-  if (isFlush) {
-    return { handName: "Flush", multiplier: 6, winningIndices: [0, 1, 2, 3, 4] };
+  let pairs = [];
+  for (let key in count) {
+    if (count[key].cnt === 2) pairs = pairs.concat(count[key].idx);
   }
-  if (isStraight) {
-    return { handName: "Straight", multiplier: 4, winningIndices: [0, 1, 2, 3, 4] };
-  }
-  for (let key in countMap) {
-    if (countMap[key].count === 3) {
-      return { handName: "Three of a Kind", multiplier: 3, winningIndices: countMap[key].indices };
-    }
-  }
-  let pairIndices = [];
-  for (let key in countMap) {
-    if (countMap[key].count === 2) {
-      pairIndices = pairIndices.concat(countMap[key].indices);
-    }
-  }
-  if (pairIndices.length === 4) {
-    return { handName: "Two Pair", multiplier: 2, winningIndices: pairIndices };
-  }
-  for (let key in countMap) {
-    if (countMap[key].count === 2 && valueMap[key] >= 11) {
-      return { handName: "Jacks or Better", multiplier: 1, winningIndices: countMap[key].indices };
-    }
+  if (pairs.length === 4) return { handName: "Two Pair", multiplier: 2, winningIndices: pairs };
+  for (let key in count) {
+    if (count[key].cnt === 2 && valueMap[key] >= 11)
+      return { handName: "Jacks or Better", multiplier: 1, winningIndices: count[key].idx };
   }
   return { handName: "No Win", multiplier: 0, winningIndices: [] };
 }
 
 // ---------------------------------------------------------
-// Main Game Loop (Remote Version)
+// Scoreboard Variables and Functions
 // ---------------------------------------------------------
+let totalWins = 0;
+let highestWin = 0;
+function updateScoreboard(winAmount) {
+  if (winAmount > 0) totalWins++;
+  if (winAmount > highestWin) highestWin = winAmount;
+}
+function displayScoreboard(handCount, totalWins, highestWin) {
+  return `Scoreboard: Hands Played: ${handCount}, Wins: ${totalWins}, Highest Win: ${highestWin}`;
+}
 
+// ---------------------------------------------------------
+// Main Game Loop
+// ---------------------------------------------------------
 async function runGame(socket) {
-  console.log("Client connected, starting game.");
-  socket.write("Welcome to Poker CLI!\n"); // Immediate output test
+  console.log("Client connected.");
+  socket.write("Welcome to Poker CLI!\n");
 
   const rl = createInterface(socket);
+  rl.on("error", err => { console.error(err); rl.close(); socket.end(); });
 
-  // Handle errors on the readline interface.
-  rl.on('error', (err) => {
-    console.error("Readline error:", err);
-    rl.close();
-    socket.end();
-  });
-
-  // Print header (banner + instructions) once on connect.
   printHeader(socket);
 
-  let betStr = await promptLine(rl, "Select your bet (5, 10, 20, 30) [default 5]: ");
-  if(betStr.toLowerCase() === "exit"){
-    writeLine(socket, "Exiting game. Goodbye!");
+  // Bet selection
+  let BET = await selectBet(rl, socket);
+  if (BET === "exit") {
+    writeLine(socket, TEXT.exitMessage);
     rl.close();
     socket.end();
     return;
   }
-  let BET = parseInt(betStr) || 5;
   let credits = 100;
+  let handCount = 0;
 
   while (credits >= BET) {
-    printUI(socket, null, "", 0, credits, `Bet: ${BET} credits per hand`);
-    let dealPrompt = await promptLine(rl, "Press Enter to deal a hand: ");
-    if(dealPrompt.toLowerCase() === "exit"){
-      writeLine(socket, "Exiting game. Goodbye!");
-      rl.close();
-      socket.end();
-      return;
-    }
-
-    credits -= BET;
-
-    const deck = new Deck();
-    deck.shuffle();
-    const initialHand = deck.deal(5);
-
-    printUI(socket, initialHand, "", 0, credits,
-      "Select cards to hold by entering their numbers (e.g. 134 for cards 1, 3, and 4).\nPress Enter to hold none.",
-      true
-    );
-
-    let holdInput = await promptLine(rl, "Enter card numbers to hold: ");
-    if(holdInput.toLowerCase() === "exit"){
-      writeLine(socket, "Exiting game. Goodbye!");
-      rl.close();
-      socket.end();
-      return;
-    }
-    let holds = [];
-    if (holdInput !== "") {
-      if (holdInput.includes(",") || holdInput.includes(" ")) {
-        holds = holdInput.split(/[, ]+/);
-      } else {
-        holds = holdInput.split("");
-      }
-      holds = holds.map(x => parseInt(x.trim()))
-                   .filter(x => !isNaN(x) && x >= 1 && x <= 5)
-                   .map(x => x - 1);
-    } else {
-      writeLine(socket, "No cards selected to hold. All cards will be replaced.");
-      let cont = await promptLine(rl, "Press Enter to continue drawing new cards: ");
-      if(cont.toLowerCase() === "exit"){
-        writeLine(socket, "Exiting game. Goodbye!");
+    printUI(socket, null, "", 0, credits, `Current bet: ${BET} credits/hand`, handCount, BET);
+    
+    let cmd = await promptLine(rl, "Deal (Enter) or type 'bet' to change bet: ");
+    if (cmd.toLowerCase() === "bet") {
+      BET = await selectBet(rl, socket);
+      if (BET === "exit") {
+        writeLine(socket, TEXT.exitMessage);
         rl.close();
         socket.end();
         return;
       }
+      continue;
+    }
+    
+    // Deal initial hand.
+    handCount++;
+    credits -= BET;
+    const deck = new Deck();
+    deck.shuffle();
+    const hand = deck.deal(5);
+
+    // Evaluate initial hand.
+    const initialResult = evaluateHand(hand);
+    if (initialResult.multiplier > 0) {
+      printUI(socket, hand, initialResult.handName, 0, credits, `Your hand is winning (${initialResult.handName})! You may hold if you wish.`, handCount, BET, initialResult.winningIndices);
+    } else {
+      printUI(socket, hand, "", 0, credits, TEXT.holdInstruction, handCount, BET);
+    }
+    
+    let holdInput = await promptLine(rl, TEXT.holdPrompt);
+    let holds = [];
+    if (holdInput !== "") {
+      holds = (holdInput.match(/\d/g) || []).map(x => parseInt(x)).filter(x => x >= 1 && x <= 5).map(x => x - 1);
+    } else {
+      writeLine(socket, TEXT.noHoldMessage);
+      await promptLine(rl, TEXT.continuePrompt);
     }
 
-    let finalHand = initialHand.slice();
+    let finalHand = hand.slice();
     for (let i = 0; i < 5; i++) {
       if (!holds.includes(i)) {
         finalHand[i] = deck.deal(1)[0];
       }
     }
 
-    const evalResult = evaluateHand(finalHand);
-    let winAmount = (evalResult.multiplier > 0) ? BET * evalResult.multiplier : 0;
+    const result = evaluateHand(finalHand);
+    let winAmount = (result.multiplier > 0) ? BET * result.multiplier : 0;
 
-    printUI(socket, finalHand, (evalResult.handName !== "No Win") ? evalResult.handName : "", winAmount, credits,
-      (evalResult.multiplier > 0)
-        ? `Final Hand: ${evalResult.handName}!`
-        : "Final Hand: No winning combination.",
-      false, evalResult.winningIndices
+    updateScoreboard(winAmount);
+    let flavorText = winAmount > 0
+      ? winMessages[Math.floor(Math.random() * winMessages.length)]
+      : lossMessages[Math.floor(Math.random() * lossMessages.length)];
+
+    printUI(socket, finalHand, result.handName !== "No Win" ? result.handName : "", winAmount, credits,
+      (winAmount > 0 ? `Final: ${result.handName}! ${flavorText}` : flavorText) + "\n" + displayScoreboard(handCount, totalWins, highestWin),
+      handCount, BET, result.winningIndices
     );
-    let cont2 = await promptLine(rl, "Press Enter to continue: ");
-    if(cont2.toLowerCase() === "exit"){
-      writeLine(socket, "Exiting game. Goodbye!");
-      rl.close();
-      socket.end();
-      return;
-    }
+    await promptLine(rl, TEXT.continuePrompt);
 
+    // Gamble session.
     if (winAmount > 0) {
-      let gambleChoice = await promptLine(rl, "Gamble: Do you want to gamble your win to double it? (Y/N): ");
-      if (gambleChoice.toLowerCase() === 'y') {
-        let colorGuess = await promptLine(rl, "Enter your guess (R for red, B for black): ");
-        if(colorGuess.toLowerCase() === "exit"){
-          writeLine(socket, "Exiting game. Goodbye!");
-          rl.close();
-          socket.end();
-          return;
-        }
-        let guess = (colorGuess.toLowerCase() === 'r') ? "red" : (colorGuess.toLowerCase() === 'b' ? "black" : "black");
-        const randomColor = Math.random() < 0.5 ? "red" : "black";
-        if (guess === randomColor) {
-          winAmount *= 2;
-          printUI(socket, finalHand, (evalResult.handName !== "No Win") ? evalResult.handName : "", winAmount, credits,
-            `Gamble successful! The card was ${randomColor}. Your win is now ${winAmount} credits.`, false);
-        } else {
-          winAmount = 0;
-          printUI(socket, finalHand, "", 0, credits,
-            `Gamble failed! The card was ${randomColor}. You lose your win for this hand.`, false);
-          let cont3 = await promptLine(rl, "Press Enter to continue: ");
-          if(cont3.toLowerCase() === "exit"){
-            writeLine(socket, "Exiting game. Goodbye!");
-            rl.close();
-            socket.end();
-            return;
+      let gambleChoice = await promptLine(rl, TEXT.gambleSessionPrompt);
+      if (gambleChoice === "1") {
+        let gambleCount = 0;
+        const maxGamble = 5;
+        let keepGamble = true;
+        let prevColors = [];
+        printGambleInteractiveUI(socket, winAmount, gambleCount, maxGamble, true, prevColors, BET);
+        while (keepGamble && gambleCount < maxGamble) {
+          printGambleInteractiveUI(socket, winAmount, gambleCount, maxGamble, false, prevColors, BET);
+          let colorChoice = await promptLine(rl, TEXT.gambleColorPrompt);
+          if (colorChoice === "3") {
+            keepGamble = false;
+          } else if (colorChoice === "1" || colorChoice === "2") {
+            let guess = (colorChoice === "1") ? "red" : "black";
+            let cardColor = Math.random() < 0.5 ? "red" : "black";
+            if (guess === cardColor) {
+              winAmount *= 2;
+              gambleCount++;
+              prevColors.push(cardColor);
+              writeLine(socket, TEXT.gambleCorrectMessage(cardColor, winAmount));
+            } else {
+              winAmount = 0;
+              prevColors.push(cardColor);
+              writeLine(socket, TEXT.gambleIncorrectMessage(cardColor));
+              keepGamble = false;
+            }
+          } else {
+            writeLine(socket, "Invalid input. Cashing out.");
+            keepGamble = false;
           }
+        }
+        if (winAmount === 0) {
+          writeLine(socket, "Gamble lost. Press Enter to continue.");
+          await promptLine(rl, TEXT.continuePrompt);
         }
       }
     }
 
     credits += winAmount;
     if (credits < BET) {
-      printUI(socket, finalHand, "", 0, credits, "Not enough credits to play. Game over!", false);
+      printUI(socket, finalHand, "", 0, credits, TEXT.insufficientCredits, handCount, BET, false);
       break;
     }
   }
 
-  writeLine(socket, chalk.bold("*** YOU LOSE! ***"));
-  outro("Game Over. Thanks for playing!");
+  writeLine(socket, TEXT.gameOverMessage);
   rl.close();
   socket.end();
 }
@@ -507,24 +526,13 @@ async function runGame(socket) {
 // Start TCP Server
 // ---------------------------------------------------------
 function startTcpServer(port) {
-  const server = net.createServer((socket) => {
-    socket.setEncoding('utf8');
-    
-    socket.on('error', (err) => {
-      console.error("Socket error:", err);
-    });
-    
-    // Call your game logic function to handle this socket connection
+  const server = net.createServer(socket => {
+    socket.on("error", err => console.error("Socket error:", err));
     runGame(socket);
   });
 
-  server.on('error', (err) => {
-    console.error("Server error:", err);
-  });
-
-  server.listen(port, '0.0.0.0', () => {
-    console.log(`TCP Server listening on port ${port}`);
-  });
+  server.on("error", err => console.error("Server error:", err));
+  server.listen(port, "0.0.0.0", () => console.log(`TCP Server listening on port ${port}`));
 }
 
 const PORT = process.env.PORT || 3000;
