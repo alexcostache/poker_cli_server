@@ -57,7 +57,7 @@ const lossMessages = [
   "Tough break, try again!",
   "Better luck next time!",
   "Don't give up, fortune favors the bold!",
-  "Keep playing – you'll get there!"
+  "Keep playing - you'll get there!"
 ];
 
 // ---------------------------------------------------------
