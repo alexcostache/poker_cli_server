@@ -9,7 +9,7 @@ primary_region = "lhr"
   protocol = "tcp"
 
   [[services.ports]]
-    port = 80
+    port = 31337
 
 [[vm]]
   cpu_kind = "shared"
